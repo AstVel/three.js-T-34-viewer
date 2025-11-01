@@ -201,12 +201,15 @@
             setTimeout(() => loadingOverlay.classList.remove('active'), 300);
           },
           (xhr) => {
-            if (xhr.total) {
-              const percent = Math.round((xhr.loaded / xhr.total) * 100);
-              loadingOverlay.textContent = percent + '%';
+            // Безопасный расчёт процента
+            let percent;
+            if (xhr.total && xhr.total > 0) {
+              percent = Math.min(100, Math.round((xhr.loaded / xhr.total) * 100));
             } else {
-              loadingOverlay.textContent = 'Loading...';
+              // fallback — плавное увеличение до 90%
+              percent = Math.min(90, Math.round(xhr.loaded / 50000)); 
             }
+            loadingOverlay.textContent = percent + '%';
           },
           (error) => {
             console.error(error);
