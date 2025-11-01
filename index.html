@@ -49,6 +49,31 @@
         background: rgba(255, 255, 255, 0.192);
         transform: scale(1.1);
       }
+
+      /* === Индикатор загрузки === */
+      #loadingOverlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        color: #000;
+        z-index: 20;
+        font-weight: bold;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+
+      #loadingOverlay.active {
+        opacity: 1;
+        pointer-events: all;
+      }
     </style>
   </head>
 
@@ -58,18 +83,23 @@
       <button id="btn2">Desert camo</button>
       <button id="btn3">Winter camo</button>
     </div>
+
+    <!-- Центрированный индикатор загрузки -->
+    <div id="loadingOverlay">0%</div>
+
     <script type="module">
       import * as THREE from 'three';
       import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
       import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
       
       let currentTank = null;
-      let autoRotateEnabled = true; // стартуем вращение сразу
+      let autoRotateEnabled = true;
       let rotationAngle = 0;
       let lastTime = performance.now();
-      let rotationSpeedFactor = 0; // для плавного ускорения
+      let rotationSpeedFactor = 0;
+
+      const loadingOverlay = document.getElementById('loadingOverlay');
       
-      // Renderer
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -79,16 +109,13 @@
       renderer.setClearColor(0x2a2a2a, 1);
       document.body.appendChild(renderer.domElement);
       
-      // Scene
       const scene = new THREE.Scene();
       
-      // Camera
       const camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 1, 1000);
       const defaultCameraPos = new THREE.Vector3(15, 6, 15);
       camera.position.copy(defaultCameraPos);
       const defaultRadius = Math.sqrt(defaultCameraPos.x ** 2 + defaultCameraPos.z ** 2);
       
-      // Controls
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.enablePan = false;
@@ -99,7 +126,6 @@
       controls.target.set(0, 1, 0);
       controls.update();
       
-      // Ground
       const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
       groundGeometry.rotateX(-Math.PI / 2);
       const groundMaterial = new THREE.MeshStandardMaterial({ color: 0xdddddd });
@@ -108,7 +134,6 @@
       groundMesh.position.set(0, -1.93, 0);
       scene.add(groundMesh);
       
-      // Lights
       const lights = [
         new THREE.SpotLight(0xffffff, 1000, 90, Math.PI / 5, 1),
         new THREE.SpotLight(0xffffff, 500, 90, Math.PI / 5, 1),
@@ -124,7 +149,6 @@
       });
       scene.add(new THREE.AmbientLight(0x404040, 2));
       
-      // Loader
       const loader = new GLTFLoader();
       
       function disposeObject(obj) {
@@ -152,6 +176,10 @@
           disposeObject(currentTank);
           currentTank = null;
         }
+
+        // Показываем оверлей
+        loadingOverlay.textContent = '0%';
+        loadingOverlay.classList.add('active');
       
         loader.load(
           path,
@@ -168,40 +196,51 @@
             tank.rotation.y = Math.PI;
             scene.add(tank);
             currentTank = tank;
+
+            // Скрываем оверлей после загрузки
+            setTimeout(() => loadingOverlay.classList.remove('active'), 300);
           },
-          undefined,
-          (error) => console.error(error)
+          (xhr) => {
+            if (xhr.total) {
+              const percent = Math.round((xhr.loaded / xhr.total) * 100);
+              loadingOverlay.textContent = percent + '%';
+            } else {
+              loadingOverlay.textContent = 'Loading...';
+            }
+          },
+          (error) => {
+            console.error(error);
+            loadingOverlay.textContent = 'Error loading model';
+            setTimeout(() => loadingOverlay.classList.remove('active'), 1000);
+          }
         );
       }
       
-      // Default tank
       loadTankModel('./models/tankmodel1/tank.gltf');
       
-      // Buttons
       document.getElementById('btn1').addEventListener('click', () => loadTankModel('./models/tankmodel1/tank.gltf'));
       document.getElementById('btn2').addEventListener('click', () => loadTankModel('./models/tankmodel2/tank.gltf'));
       document.getElementById('btn3').addEventListener('click', () => loadTankModel('./models/tankmodel3/tank.gltf'));
       
-      // === AUTO ROTATE TOGGLE BUTTON ===
       const toggleBtn = document.createElement('button');
       toggleBtn.textContent = autoRotateEnabled ? '⏸ Stop Auto Rotate' : '▶ Auto Rotate';
       Object.assign(toggleBtn.style, {
         position: 'absolute',
-        top: '10px',
-        right: '10px',
+        bottom: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
         zIndex: '10',
         padding: '12px 18px',
         fontSize: '18px',
         border: '3px solid rgba(255, 255, 255, 0.7)',
         borderRadius: '6px',
         cursor: 'pointer',
-        background: 'rgba(255, 255, 255,0.3)',
+        background: 'rgba(255, 255, 255, 0.3)',
         color: '#000',
       });
       document.body.appendChild(toggleBtn);
       controls.enabled = !autoRotateEnabled;
       
-      // === Вспомогательные функции ===
       function getAzimuthFromCamera() {
         return Math.atan2(camera.position.x, camera.position.z);
       }
@@ -213,19 +252,17 @@
         const endY = defaultCameraPos.y;
         const distance = Math.abs(startRadius - endRadius) + Math.abs(startY - endY);
       
-        // адаптивная длительность: минимум 0.1с, максимум 2.5с
         const duration = THREE.MathUtils.clamp(distance * 100, 100, 2500);
         const startTime = performance.now();
       
-        // сохраняем текущую азимутальную ось
         rotationAngle = getAzimuthFromCamera();
-        rotationSpeedFactor = 0; // плавно разгоняем заново
+        rotationSpeedFactor = 0;
         const radiusDelta = endRadius - startRadius;
         const yDelta = endY - startY;
       
         function step(now) {
           const t = Math.min((now - startTime) / duration, 1);
-          const smooth = t * t * (3 - 2 * t); // smoothstep
+          const smooth = t * t * (3 - 2 * t);
           const radius = startRadius + radiusDelta * smooth;
           const y = startY + yDelta * smooth;
       
@@ -247,7 +284,6 @@
         requestAnimationFrame(step);
       }
       
-      // Toggle auto-rotate
       toggleBtn.addEventListener('click', () => {
         if (autoRotateEnabled) {
           autoRotateEnabled = false;
@@ -259,16 +295,14 @@
         }
       });
       
-      // === АНИМАЦИЯ ===
       function animate(time) {
         requestAnimationFrame(animate);
         const delta = time - lastTime;
         lastTime = time;
       
-        const rotationBaseSpeed = (2 * Math.PI) / 15000; // полный оборот за 15 сек
+        const rotationBaseSpeed = (2 * Math.PI) / 15000;
       
         if (autoRotateEnabled && currentTank) {
-          // плавное ускорение за 0.3 секунды
           rotationSpeedFactor += delta / 300;
           rotationSpeedFactor = Math.min(rotationSpeedFactor, 1);
       
@@ -290,13 +324,11 @@
       }
       animate();
       
-      // Resize
       window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
       });
-      </script>
-        
+    </script>
   </body>
 </html>
